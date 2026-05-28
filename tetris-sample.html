@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>🎮 TETRIS VIBE — Classic Block Stacker</title>
+    <title>🎮 TETRIS VIBE — with Pause Button</title>
     <style>
         * {
             user-select: none;
@@ -124,7 +124,7 @@
             font-family: monospace;
             padding: 8px 24px;
             border-radius: 60px;
-            margin-top: 20px;
+            margin-top: 12px;
             cursor: pointer;
             color: #1f1a0a;
             transition: 0.08s linear;
@@ -135,6 +135,12 @@
         button:active {
             transform: translateY(2px);
             box-shadow: 0 2px 0 #7a4411;
+        }
+
+        .pause-btn {
+            background: #4a6e8a;
+            box-shadow: 0 5px 0 #2a4a6a;
+            margin-bottom: 8px;
         }
 
         .status {
@@ -173,8 +179,9 @@
                 <div class="control-row">◀ <kbd>←</kbd> &nbsp; <kbd>→</kbd> ▶</div>
                 <div class="control-row"><kbd>↑</kbd> ROTATE &nbsp;&nbsp; <kbd>↓</kbd> SOFT</div>
                 <div class="control-row"><kbd>Space</kbd> HARD DROP</div>
-                <div class="control-row"><kbd>R</kbd> RESTART</div>
+                <div class="control-row"><kbd>P</kbd> PAUSE &nbsp;&nbsp; <kbd>R</kbd> RESTART</div>
             </div>
+            <button id="pauseButton" class="pause-btn">⏸️ PAUSE</button>
             <button id="resetButton">🔄 NEW GAME</button>
             <div class="status" id="gameStatusText">▶ PLAYING</div>
         </div>
@@ -187,7 +194,7 @@
         const BOARD_W = 10;
         const BOARD_H = 20;
         const BLOCK_SIZE = 30;    // boardCanvas 300x600
-        const NEXT_SIZE = 24;      // next canvas block size (120/5 ≈24 but we center)
+        const NEXT_SIZE = 24;      // next canvas block size
         
         const canvas = document.getElementById('boardCanvas');
         const ctx = canvas.getContext('2d');
@@ -268,6 +275,7 @@
         let score = 0;
         let totalLines = 0;
         let gameActive = true;
+        let isPaused = false;
         let fallInterval = null;
         let baseSpeed = 500;          // ms per fall
         let currentSpeed = baseSpeed;
@@ -276,7 +284,6 @@
         function getRandomTetromino() {
             const idx = Math.floor(Math.random() * TETROMINOS.length);
             const original = TETROMINOS[idx];
-            // deep copy shape
             const shapeCopy = original.shape.map(row => [...row]);
             return {
                 shape: shapeCopy,
@@ -289,29 +296,25 @@
             if (!nextTetromino) {
                 nextTetromino = getRandomTetromino();
             }
-            // active becomes what was next
             activePiece = {
                 shape: nextTetromino.shape.map(row => [...row]),
                 color: nextTetromino.color,
                 x: Math.floor((BOARD_W - nextTetromino.shape[0].length) / 2),
                 y: 0
             };
-            // generate new next piece
             nextTetromino = getRandomTetromino();
             
-            // collision at spawn? game over
             if (collision(activePiece.shape, activePiece.x, activePiece.y)) {
                 gameActive = false;
                 if (fallInterval) clearInterval(fallInterval);
                 document.getElementById('gameStatusText').innerText = '💀 GAME OVER 💀';
-                drawAll(); // draw final freeze
+                drawAll();
                 return false;
             }
             drawAll();
             return true;
         }
         
-        // collision test between piece shape and board at (offX, offY)
         function collision(shape, offX, offY) {
             for (let row = 0; row < shape.length; row++) {
                 for (let col = 0; col < shape[0].length; col++) {
@@ -330,7 +333,6 @@
             return false;
         }
         
-        // merge active piece to board
         function mergePiece() {
             for (let row = 0; row < activePiece.shape.length; row++) {
                 for (let col = 0; col < activePiece.shape[0].length; col++) {
@@ -343,19 +345,15 @@
                     }
                 }
             }
-            // clear lines and update score
             clearLines();
-            // spawn next piece
             const success = spawnNewPiece();
             if (!success) {
-                // game already ended
                 drawAll();
             }
             adjustGameSpeed();
             drawAll();
         }
         
-        // clear full rows, update score & lines
         function clearLines() {
             let rowsCleared = 0;
             for (let row = BOARD_H-1; row >= 0; ) {
@@ -367,20 +365,17 @@
                     }
                 }
                 if (full) {
-                    // remove row
                     for (let r = row; r > 0; r--) {
                         board[r] = [...board[r-1]];
                     }
                     board[0] = Array(BOARD_W).fill(0);
                     rowsCleared++;
-                    // stay at same row index because rows shifted down
                 } else {
                     row--;
                 }
             }
             
             if (rowsCleared > 0) {
-                // Classic scoring
                 const lineScores = {1: 100, 2: 300, 3: 500, 4: 800};
                 const addScore = lineScores[rowsCleared] || 100;
                 score += addScore;
@@ -394,9 +389,8 @@
             document.getElementById('linesDisplay').innerText = totalLines;
         }
         
-        // move piece left/right/down
         function movePiece(dx, dy) {
-            if (!gameActive) return false;
+            if (!gameActive || isPaused) return false;
             const newX = activePiece.x + dx;
             const newY = activePiece.y + dy;
             if (!collision(activePiece.shape, newX, newY)) {
@@ -405,7 +399,6 @@
                 drawAll();
                 return true;
             } else if (dy === 1) {
-                // moving down & collision -> merge
                 mergePiece();
                 drawAll();
                 return false;
@@ -413,17 +406,13 @@
             return false;
         }
         
-        // rotate piece
         function rotatePiece() {
-            if (!gameActive) return;
-            // matrix rotation 90deg
+            if (!gameActive || isPaused) return;
             const oldShape = activePiece.shape;
             const rotated = oldShape[0].map((_, idx) => oldShape.map(row => row[idx]).reverse());
             const previousShape = activePiece.shape;
             activePiece.shape = rotated;
-            // collision handling (kick simple)
             if (collision(activePiece.shape, activePiece.x, activePiece.y)) {
-                // try left / right shifts
                 for (let shift of [-1, 1, -2, 2]) {
                     const newX = activePiece.x + shift;
                     if (!collision(activePiece.shape, newX, activePiece.y)) {
@@ -433,23 +422,20 @@
                         return;
                     }
                 }
-                // revert rotation
                 activePiece.shape = previousShape;
             }
             drawAll();
         }
         
-        // hard drop
         function hardDrop() {
-            if (!gameActive) return;
+            if (!gameActive || isPaused) return;
             while (!collision(activePiece.shape, activePiece.x, activePiece.y+1)) {
                 activePiece.y++;
             }
-            mergePiece();  // lock immediately
+            mergePiece();
             drawAll();
         }
         
-        // adjust speed based on lines cleared (difficulty)
         function adjustGameSpeed() {
             if (!gameActive) return;
             let newSpeed = baseSpeed - Math.floor(totalLines / 5) * 35;
@@ -458,7 +444,7 @@
             if (fallInterval) {
                 clearInterval(fallInterval);
                 fallInterval = setInterval(() => {
-                    if (gameActive) {
+                    if (gameActive && !isPaused) {
                         movePiece(0, 1);
                         drawAll();
                     }
@@ -466,18 +452,40 @@
             }
         }
         
+        // ---------- PAUSE TOGGLE ----------
+        function togglePause() {
+            if (!gameActive) return;  // can't pause when game over
+            
+            isPaused = !isPaused;
+            const statusDiv = document.getElementById('gameStatusText');
+            const pauseBtn = document.getElementById('pauseButton');
+            
+            if (isPaused) {
+                statusDiv.innerText = '⏸️ PAUSED';
+                pauseBtn.innerHTML = '▶️ RESUME';
+                // No need to clear interval — it checks isPaused flag
+            } else {
+                statusDiv.innerText = '▶ PLAYING';
+                pauseBtn.innerHTML = '⏸️ PAUSE';
+                // Force a redraw to clear any pause overlay visuals
+                drawAll();
+            }
+            drawAll(); // show pause overlay if needed
+        }
+        
         // restart game
         function restartGame() {
             if (fallInterval) clearInterval(fallInterval);
-            // reset board
             board = Array(BOARD_H).fill().map(() => Array(BOARD_W).fill(0));
             score = 0;
             totalLines = 0;
             gameActive = true;
+            isPaused = false;
             updateInfoUI();
             document.getElementById('gameStatusText').innerText = '▶ PLAYING';
+            const pauseBtn = document.getElementById('pauseButton');
+            pauseBtn.innerHTML = '⏸️ PAUSE';
             
-            // randomize next and spawn
             nextTetromino = getRandomTetromino();
             const successSpawn = (function initSpawn(){
                 activePiece = {
@@ -498,7 +506,7 @@
             currentSpeed = baseSpeed;
             if (fallInterval) clearInterval(fallInterval);
             fallInterval = setInterval(() => {
-                if (gameActive) {
+                if (gameActive && !isPaused) {
                     movePiece(0, 1);
                     drawAll();
                 }
@@ -506,10 +514,9 @@
             drawAll();
         }
         
-        // ---------- DRAWING (RETRO GLOW) ----------
+        // ---------- DRAWING WITH PAUSE OVERLAY ----------
         function drawBoard() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // grid background
             ctx.fillStyle = '#0a0f1f';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             for (let row = 0; row < BOARD_H; row++) {
@@ -531,7 +538,6 @@
                     }
                 }
             }
-            // draw active piece
             if (activePiece && gameActive) {
                 const shape = activePiece.shape;
                 for (let row = 0; row < shape.length; row++) {
@@ -551,7 +557,6 @@
                     }
                 }
             }
-            // draw grid lines
             ctx.beginPath();
             ctx.strokeStyle = '#2e3b4e';
             ctx.lineWidth = 0.6;
@@ -568,6 +573,18 @@
                 ctx.fillStyle = "#ffcc55";
                 ctx.shadowBlur = 0;
                 ctx.fillText("GAME OVER", canvas.width/2-85, canvas.height/2-30);
+            }
+            // PAUSE OVERLAY
+            if(isPaused && gameActive){
+                ctx.fillStyle = "rgba(0,0,0,0.75)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.font = "bold 32monospace";
+                ctx.fillStyle = "#ffdd99";
+                ctx.shadowBlur = 0;
+                ctx.fillText("⏸ PAUSED", canvas.width/2-85, canvas.height/2);
+                ctx.font = "16px monospace";
+                ctx.fillStyle = "#ccccaa";
+                ctx.fillText("press P or click RESUME", canvas.width/2-105, canvas.height/2+50);
             }
         }
         
@@ -603,12 +620,19 @@
             drawNext();
         }
         
-        // ---------- KEYBOARD HANDLING & GAME LOOP INIT----------
+        // ---------- KEYBOARD HANDLING ----------
         function handleKey(e) {
             const key = e.key;
-            if (!gameActive && key !== 'r' && key !== 'R' && key !== 'r'.toUpperCase()) {
-                if (key === ' ' || key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight') {
+            // Allow pause even when game over, but no other actions
+            if (key === 'p' || key === 'P') {
+                e.preventDefault();
+                if (gameActive) togglePause();
+                return;
+            }
+            if (!gameActive || isPaused) {
+                if (key === 'r' || key === 'R') {
                     e.preventDefault();
+                    restartGame();
                 }
                 return;
             }
@@ -624,9 +648,9 @@
             drawAll();
         }
         
-        // prevent page scroll on arrows / space
         window.addEventListener('keydown', function(e) {
-            if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Space' || e.key === 'r' || e.key === 'R') {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || 
+                e.key === ' ' || e.key === 'Space' || e.key === 'r' || e.key === 'R' || e.key === 'p' || e.key === 'P') {
                 if (document.activeElement && document.activeElement.tagName === 'BUTTON') return;
                 e.preventDefault();
                 handleKey(e);
@@ -637,18 +661,18 @@
             restartGame();
         });
         
-        // fall interval initializer
+        document.getElementById('pauseButton').addEventListener('click', () => {
+            if (gameActive) togglePause();
+        });
+        
         function initGame() {
-            restartGame();  // builds board, pieces, interval
+            restartGame();
         }
         
         initGame();
-        // clean up on page reload just in case, but we keep it
         window.addEventListener('beforeunload', ()=>{
             if(fallInterval) clearInterval(fallInterval);
         });
-        
-        // extra touch friendly but basic
         canvas.addEventListener('touchstart', (e) => e.preventDefault());
     })();
 </script>

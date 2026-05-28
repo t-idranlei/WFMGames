@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>🐍 SNAKE VIBE | Classic Arcade Snake</title>
+    <style>
+        * {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: radial-gradient(circle at 30% 20%, #1a3a1a, #0a1f0a);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', 'VT323', 'Fira Code', monospace;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            background: #0d1f0daa;
+            backdrop-filter: blur(4px);
+            border-radius: 56px;
+            padding: 24px 32px;
+            box-shadow: 0 25px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,200,0.1);
+            border: 1px solid #4a7a3a;
+        }
+
+        .arena-wrapper {
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        canvas {
+            display: block;
+            background-color: #1a2a1a;
+            border-radius: 24px;
+            box-shadow: 0 12px 28px black;
+            border: 3px solid #6f9f4a;
+        }
+
+        #gameCanvas {
+            cursor: pointer;
+        }
+
+        .info-panel {
+            background: #0a140ae6;
+            backdrop-filter: blur(8px);
+            border-radius: 32px;
+            padding: 20px 28px;
+            min-width: 190px;
+            text-align: center;
+            border: 1px solid #8ac860;
+        }
+
+        .stat-block {
+            background: #00000055;
+            border-radius: 28px;
+            padding: 12px 18px;
+            margin-bottom: 24px;
+        }
+
+        .stat-label {
+            color: #c4ecaa;
+            font-size: 1rem;
+            letter-spacing: 2px;
+            font-weight: bold;
+        }
+
+        .stat-value {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #f5e56b;
+            text-shadow: 0 0 6px #ffaa2e;
+            line-height: 1;
+            font-family: monospace;
+        }
+
+        .controls {
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .ctrl-row {
+            background: #1a2e1a;
+            padding: 8px 12px;
+            border-radius: 48px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        kbd {
+            background: #2c4a2a;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-weight: bold;
+            color: #ffeaaf;
+            font-size: 0.9rem;
+            box-shadow: inset 0 1px 0 #6f9f5a, 0 2px 0 #0e1a0a;
+        }
+
+        button {
+            background: #4a8a2a;
+            border: none;
+            font-weight: bold;
+            font-family: monospace;
+            font-size: 1.2rem;
+            padding: 8px 18px;
+            border-radius: 60px;
+            margin-top: 12px;
+            cursor: pointer;
+            color: #1f2a0a;
+            transition: 0.05s linear;
+            box-shadow: 0 5px 0 #2a5a1a;
+            width: 100%;
+        }
+
+        button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #2a5a1a;
+        }
+
+        .status {
+            margin-top: 18px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            background: #00000099;
+            border-radius: 2rem;
+            padding: 8px;
+            color: #facc15;
+        }
+
+        @media (max-width: 680px) {
+            .game-container { padding: 16px; }
+            .stat-value { font-size: 2rem; }
+            kbd { padding: 2px 8px; }
+        }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <div class="arena-wrapper">
+        <canvas id="gameCanvas" width="500" height="500"></canvas>
+        <div class="info-panel">
+            <div class="stat-block">
+                <div class="stat-label">🍎 SCORE</div>
+                <div class="stat-value" id="scoreValue">0</div>
+            </div>
+            <div class="stat-block">
+                <div class="stat-label">🐍 LENGTH</div>
+                <div class="stat-value" id="lengthValue">3</div>
+            </div>
+            <div class="stat-block">
+                <div class="stat-label">🏆 HIGH</div>
+                <div class="stat-value" id="highScoreValue">0</div>
+            </div>
+            <div class="controls">
+                <div class="ctrl-row">🎮 <kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd></div>
+                <div class="ctrl-row"><kbd>Space</kbd> or <kbd>P</kbd> PAUSE &nbsp; <kbd>R</kbd> RESTART</div>
+            </div>
+            <button id="resetBtn">🔄 NEW GAME</button>
+            <button id="pauseBtn">⏸️ PAUSE</button>
+            <div class="status" id="gameStatus">▶ SNAKE MODE</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function(){
+        // ---------- SNAKE CORE ----------
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const SIZE = 500;
+        const GRID_SIZE = 20;      // 20x20 grid
+        const CELL_SIZE = SIZE / GRID_SIZE; // 25px
+        
+        // Game state
+        let snake = [
+            {x: 10, y: 10},
+            {x: 9, y: 10},
+            {x: 8, y: 10},
+            {x: 7, y: 10}
+        ];
+        let direction = 'RIGHT';    // current moving direction
+        let nextDirection = 'RIGHT';
+        let food = {x: 15, y: 10};
+        let score = 0;
+        let highScore = localStorage.getItem('snakeHighScore') ? parseInt(localStorage.getItem('snakeHighScore')) : 0;
+        let gameActive = true;
+        let isPaused = false;
+        let gameLoopInterval = null;
+        let speedMs = 120;           // milliseconds per tick
+        
+        // DOM elements
+        const scoreSpan = document.getElementById('scoreValue');
+        const lengthSpan = document.getElementById('lengthValue');
+        const highScoreSpan = document.getElementById('highScoreValue');
+        const gameStatusDiv = document.getElementById('gameStatus');
+        const pauseBtn = document.getElementById('pauseBtn');
+        
+        highScoreSpan.innerText = highScore;
+        
+        // Helper: generate random food avoiding snake body
+        function generateRandomFood() {
+            const totalCells = GRID_SIZE * GRID_SIZE;
+            if (snake.length >= totalCells) {
+                // win condition
+                gameActive = false;
+                if (gameLoopInterval) clearInterval(gameLoopInterval);
+                gameStatusDiv.innerText = '🏆 YOU WIN! 🏆';
+                return false;
+            }
+            
+            const snakeSet = new Set(snake.map(seg => `${seg.x},${seg.y}`));
+            const freeCells = [];
+            for (let i = 0; i < GRID_SIZE; i++) {
+                for (let j = 0; j < GRID_SIZE; j++) {
+                    if (!snakeSet.has(`${i},${j}`)) {
+                        freeCells.push({x: i, y: j});
+                    }
+                }
+            }
+            if (freeCells.length === 0) {
+                gameActive = false;
+                if (gameLoopInterval) clearInterval(gameLoopInterval);
+                gameStatusDiv.innerText = '🏆 PERFECT WIN!';
+                return false;
+            }
+            const rand = Math.floor(Math.random() * freeCells.length);
+            food = freeCells[rand];
+            return true;
+        }
+        
+        // Update UI
+        function updateUI() {
+            scoreSpan.innerText = score;
+            lengthSpan.innerText = snake.length;
+            if (score > highScore) {
+                highScore = score;
+                highScoreSpan.innerText = highScore;
+                localStorage.setItem('snakeHighScore', highScore);
+            }
+        }
+        
+        // Core movement & collision
+        function gameTick() {
+            if (!gameActive || isPaused) return;
+            
+            // commit direction
+            direction = nextDirection;
+            
+            // calculate new head
+            let newHead = { ...snake[0] };
+            switch(direction) {
+                case 'RIGHT': newHead.x += 1; break;
+                case 'LEFT': newHead.x -= 1; break;
+                case 'UP': newHead.y -= 1; break;
+                case 'DOWN': newHead.y += 1; break;
+                default: break;
+            }
+            
+            // check food collision first
+            let willEat = (newHead.x === food.x && newHead.y === food.y);
+            
+            // perform movement (insert new head)
+            snake.unshift(newHead);
+            if (!willEat) {
+                snake.pop();
+            } else {
+                // ate food: increase score, generate new food
+                score++;
+                updateUI();
+                const success = generateRandomFood();
+                if (!success) {
+                    // game win situation already handled in generateRandomFood
+                    draw(); // final draw
+                    return;
+                }
+            }
+            
+            // collision detection: walls or self
+            // walls
+            if (newHead.x < 0 || newHead.x >= GRID_SIZE || newHead.y < 0 || newHead.y >= GRID_SIZE) {
+                gameActive = false;
+                if (gameLoopInterval) clearInterval(gameLoopInterval);
+                gameStatusDiv.innerText = '💀 GAME OVER 💀';
+                pauseBtn.innerText = '⏸️ PAUSE';
+                isPaused = false;
+                draw();
+                return;
+            }
+            
+            // self collision (skip head check because head is new and we might have eaten? check if head overlaps with body index>0)
+            for (let i = 1; i < snake.length; i++) {
+                if (snake[i].x === newHead.x && snake[i].y === newHead.y) {
+                    gameActive = false;
+                    if (gameLoopInterval) clearInterval(gameLoopInterval);
+                    gameStatusDiv.innerText = '💀 GAME OVER 💀';
+                    pauseBtn.innerText = '⏸️ PAUSE';
+                    isPaused = false;
+                    draw();
+                    return;
+                }
+            }
+            
+            updateUI();
+            draw();
+        }
+        
+        // ---------- DRAW EVERYTHING (RETRO STYLE) ----------
+        function draw() {
+            ctx.clearRect(0, 0, SIZE, SIZE);
+            // background grid
+            ctx.fillStyle = '#1a3322';
+            ctx.fillRect(0, 0, SIZE, SIZE);
+            for (let i = 0; i < GRID_SIZE; i++) {
+                for (let j = 0; j < GRID_SIZE; j++) {
+                    ctx.strokeStyle = '#2a5a2a';
+                    ctx.lineWidth = 0.5;
+                    ctx.strokeRect(i * CELL_SIZE, j * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                }
+            }
+            
+            // draw food (apple)
+            ctx.fillStyle = '#ff5555';
+            ctx.shadowBlur = 5;
+            ctx.beginPath();
+            ctx.arc(food.x * CELL_SIZE + CELL_SIZE/2, food.y * CELL_SIZE + CELL_SIZE/2, CELL_SIZE/2 - 3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#ffaa77';
+            ctx.beginPath();
+            ctx.arc(food.x * CELL_SIZE + CELL_SIZE/2 - 2, food.y * CELL_SIZE + CELL_SIZE/2 - 3, 3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#6b3e1a';
+            ctx.fillRect(food.x * CELL_SIZE + CELL_SIZE/2 - 2, food.y * CELL_SIZE + CELL_SIZE/2 - 8, 4, 8);
+            
+            // draw snake
+            for (let i = 0; i < snake.length; i++) {
+                const seg = snake[i];
+                const x = seg.x * CELL_SIZE;
+                const y = seg.y * CELL_SIZE;
+                const gradient = ctx.createLinearGradient(x, y, x+CELL_SIZE, y+CELL_SIZE);
+                if (i === 0) {
+                    gradient.addColorStop(0, '#6fbf4a');
+                    gradient.addColorStop(1, '#3f8a2a');
+                } else {
+                    gradient.addColorStop(0, '#4ca83a');
+                    gradient.addColorStop(1, '#2a6a1a');
+                }
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x+1, y+1, CELL_SIZE-2, CELL_SIZE-2);
+                ctx.fillStyle = '#d4ffaa';
+                if (i === 0) {
+                    ctx.fillRect(x+CELL_SIZE-8, y+6, 5, 5);
+                    ctx.fillRect(x+4, y+6, 5, 5);
+                }
+                ctx.fillStyle = '#1a2a0a';
+                if (i === 0) {
+                    ctx.fillRect(x+CELL_SIZE-7, y+7, 3, 3);
+                    ctx.fillRect(x+5, y+7, 3, 3);
+                }
+            }
+            ctx.shadowBlur = 0;
+            
+            // draw pause overlay if needed
+            if (isPaused && gameActive) {
+                ctx.fillStyle = 'rgba(0,0,0,0.75)';
+                ctx.fillRect(0, 0, SIZE, SIZE);
+                ctx.font = 'bold 36px "Courier New", monospace';
+                ctx.fillStyle = '#f5e56b';
+                ctx.shadowBlur = 0;
+                ctx.fillText('⏸ PAUSED', SIZE/2-100, SIZE/2);
+                ctx.font = '16px monospace';
+                ctx.fillStyle = '#bbdd99';
+                ctx.fillText('press SPACE / P to resume', SIZE/2-135, SIZE/2+50);
+            }
+            
+            if (!gameActive) {
+                ctx.fillStyle = 'rgba(30,10,10,0.85)';
+                ctx.fillRect(0, 0, SIZE, SIZE);
+                ctx.font = 'bold 32px monospace';
+                ctx.fillStyle = '#ffaa66';
+                ctx.fillText('GAME OVER', SIZE/2-105, SIZE/2-20);
+                ctx.font = '18px monospace';
+                ctx.fillStyle = '#eeeeaa';
+                ctx.fillText('press R or NEW GAME', SIZE/2-110, SIZE/2+40);
+            }
+        }
+        
+        // ---------- CONTROLS & RESET/PAUSE ----------
+        function changeDirection(newDir) {
+            if (!gameActive || isPaused) return;
+            // prevent 180-degree reverse
+            if ((newDir === 'RIGHT' && direction === 'LEFT') ||
+                (newDir === 'LEFT' && direction === 'RIGHT') ||
+                (newDir === 'UP' && direction === 'DOWN') ||
+                (newDir === 'DOWN' && direction === 'UP')) {
+                return;
+            }
+            nextDirection = newDir;
+        }
+        
+        function resetGame() {
+            // kill old interval
+            if (gameLoopInterval) clearInterval(gameLoopInterval);
+            
+            // reset state
+            snake = [
+                {x: 10, y: 10},
+                {x: 9, y: 10},
+                {x: 8, y: 10},
+                {x: 7, y: 10}
+            ];
+            direction = 'RIGHT';
+            nextDirection = 'RIGHT';
+            score = 0;
+            gameActive = true;
+            isPaused = false;
+            pauseBtn.innerText = '⏸️ PAUSE';
+            gameStatusDiv.innerText = '▶ SNAKE MODE';
+            updateUI();
+            
+            // generate food not on snake
+            const snakeSet = new Set(snake.map(s => `${s.x},${s.y}`));
+            let freePos = false;
+            for (let i = 0; i < GRID_SIZE && !freePos; i++) {
+                for (let j = 0; j < GRID_SIZE; j++) {
+                    if (!snakeSet.has(`${i},${j}`)) {
+                        food = {x: i, y: j};
+                        freePos = true;
+                        break;
+                    }
+                }
+            }
+            if (!freePos) food = {x: 15, y: 15};
+            
+            // restart interval
+            gameLoopInterval = setInterval(() => {
+                gameTick();
+            }, speedMs);
+            draw();
+        }
+        
+        function togglePause() {
+            if (!gameActive) return;
+            isPaused = !isPaused;
+            if (isPaused) {
+                gameStatusDiv.innerText = '⏸️ PAUSED';
+                pauseBtn.innerText = '▶️ RESUME';
+            } else {
+                gameStatusDiv.innerText = '▶ SNAKE MODE';
+                pauseBtn.innerText = '⏸️ PAUSE';
+                draw(); // refresh removing overlay
+            }
+            draw();
+        }
+        
+        // ---------- EVENT HANDLERS ----------
+        function handleKeydown(e) {
+            const key = e.key;
+            // prevent arrow scrolling
+            if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight' ||
+                key === ' ' || key === 'Space' || key === 'p' || key === 'P' || key === 'r' || key === 'R') {
+                e.preventDefault();
+            }
+            
+            // pause toggles
+            if (key === 'p' || key === 'P' || key === ' ' || key === 'Space') {
+                if (gameActive) togglePause();
+                return;
+            }
+            
+            if (key === 'r' || key === 'R') {
+                resetGame();
+                return;
+            }
+            
+            // direction keys only if game active and not paused
+            if (!gameActive || isPaused) return;
+            
+            switch(key) {
+                case 'ArrowUp': changeDirection('UP'); break;
+                case 'ArrowDown': changeDirection('DOWN'); break;
+                case 'ArrowLeft': changeDirection('LEFT'); break;
+                case 'ArrowRight': changeDirection('RIGHT'); break;
+                default: break;
+            }
+        }
+        
+        window.addEventListener('keydown', handleKeydown);
+        document.getElementById('resetBtn').addEventListener('click', () => resetGame());
+        pauseBtn.addEventListener('click', () => { if (gameActive) togglePause(); });
+        
+        // Initialize game
+        function init() {
+            highScoreSpan.innerText = highScore;
+            resetGame();  // starts interval and drawing
+        }
+        
+        init();
+        
+        // optional: touch prevention on canvas
+        canvas.addEventListener('touchstart', (e) => e.preventDefault());
+    })();
+</script>
+</body>
+</html>

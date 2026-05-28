@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>◼ CHECKERS ◼ | PvP + Vs AI (3 Difficulties)</title>
+    <style>
+        * {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: linear-gradient(135deg, #1a2a1f 0%, #0a1a0a 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', 'VT323', 'Segoe UI', monospace;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            background: #000000aa;
+            backdrop-filter: blur(4px);
+            border-radius: 56px;
+            padding: 24px 32px;
+            box-shadow: 0 25px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,200,0.1);
+            border: 1px solid #c0a870;
+        }
+
+        .checkers-wrapper {
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        canvas {
+            display: block;
+            background: #d4b88c;
+            border-radius: 16px;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+            border: 4px solid #b88c4a;
+            cursor: pointer;
+        }
+
+        .info-panel {
+            background: #0f1422cc;
+            backdrop-filter: blur(8px);
+            border-radius: 32px;
+            padding: 20px 28px;
+            min-width: 240px;
+            text-align: center;
+            border: 1px solid #c0a870;
+        }
+
+        .turn-indicator {
+            background: #00000066;
+            border-radius: 28px;
+            padding: 12px 18px;
+            margin-bottom: 20px;
+        }
+
+        .turn-text {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .turn-piece {
+            font-size: 2rem;
+            margin: 5px 0;
+        }
+
+        .status-box {
+            background: #010510cc;
+            border-radius: 24px;
+            padding: 12px;
+            margin: 15px 0;
+            font-weight: bold;
+            color: #facc15;
+        }
+
+        .mode-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .difficulty-buttons {
+            display: flex;
+            gap: 8px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #8a6a3a;
+            border: none;
+            font-weight: bold;
+            font-family: monospace;
+            font-size: 0.9rem;
+            padding: 8px 12px;
+            border-radius: 60px;
+            cursor: pointer;
+            color: #f0f0e0;
+            transition: 0.05s linear;
+            box-shadow: 0 4px 0 #4a2a1a;
+            flex: 1;
+        }
+
+        button:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #4a2a1a;
+        }
+
+        .active-mode {
+            background: #eab308;
+            color: #1f2a0a;
+            box-shadow: 0 4px 0 #9a6a1a;
+        }
+
+        .reset-btn {
+            background: #aa6a3a;
+            width: 100%;
+            margin-top: 12px;
+            font-size: 1rem;
+        }
+
+        .controls {
+            margin-top: 16px;
+            font-size: 0.7rem;
+            background: #00000055;
+            border-radius: 28px;
+            padding: 10px;
+        }
+
+        kbd {
+            background: #2a2a3a;
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-weight: bold;
+            color: #ffe0aa;
+        }
+
+        @media (max-width: 780px) {
+            .game-container { padding: 16px; }
+            .turn-text { font-size: 1rem; }
+            button { font-size: 0.7rem; padding: 6px 8px; }
+        }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <div class="checkers-wrapper">
+        <canvas id="checkersCanvas" width="480" height="480"></canvas>
+        <div class="info-panel">
+            <div class="turn-indicator">
+                <div class="turn-text">TURN</div>
+                <div class="turn-piece" id="turnPiece">🔴 RED</div>
+            </div>
+            <div class="status-box" id="gameStatus">
+                Red moves first
+            </div>
+            <div class="mode-buttons">
+                <button id="pvpBtn" class="active-mode">👥 PvP</button>
+                <button id="vsAIBtn">🤖 VS AI</button>
+            </div>
+            <div class="difficulty-buttons" id="difficultyPanel">
+                <button id="easyBtn">🍃 EASY</button>
+                <button id="mediumBtn" class="active-mode">🔥 MEDIUM</button>
+                <button id="hardBtn">💀 HARD</button>
+            </div>
+            <button id="resetBtn" class="reset-btn">🔄 NEW GAME</button>
+            <div class="controls">
+                <div>◼ Click piece → click square</div>
+                <div>⭐ <kbd>R</kbd> restart</div>
+                <div>🔥 Mandatory jumps! Kings move backward too</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('checkersCanvas');
+        const ctx = canvas.getContext('2d');
+        const SIZE = 480;
+        const CELL_SIZE = SIZE / 8;
+        
+        // Game state
+        let board = Array(8).fill().map(() => Array(8).fill(null));
+        let currentTurn = 'red'; // red moves first
+        let gameActive = true;
+        let selectedRow = null, selectedCol = null;
+        let validMoves = [];
+        
+        // Mode & AI
+        let gameMode = 'pvp';     // 'pvp' or 'vsAI'
+        let aiDifficulty = 'medium'; // 'easy', 'medium', 'hard'
+        let aiThinking = false;
+        
+        // DOM elements
+        const turnPieceSpan = document.getElementById('turnPiece');
+        const gameStatusSpan = document.getElementById('gameStatus');
+        const pvpBtn = document.getElementById('pvpBtn');
+        const vsAIBtn = document.getElementById('vsAIBtn');
+        const easyBtn = document.getElementById('easyBtn');
+        const mediumBtn = document.getElementById('mediumBtn');
+        const hardBtn = document.getElementById('hardBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        
+        // ---------- BOARD INITIALIZATION ----------
+        function initBoard() {
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    board[i][j] = null;
+                }
+            }
+            // black pieces (top 3 rows)
+            for (let row = 0; row < 3; row++) {
+                for (let col = 0; col < 8; col++) {
+                    if ((row + col) % 2 === 1) board[row][col] = 'b';
+                }
+            }
+            // red pieces (bottom 3 rows)
+            for (let row = 5; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    if ((row + col) % 2 === 1) board[row][col] = 'r';
+                }
+            }
+        }
+        
+        function isDarkSquare(row, col) {
+            return (row + col) % 2 === 1;
+        }
+        
+        // ---------- MOVE GENERATION ----------
+        function getJumpsForPiece(row, col, piece, boardState) {
+            const jumps = [];
+            const isKing = piece === 'R' || piece === 'B';
+            const color = piece.toLowerCase();
+            const forwardDir = color === 'r' ? -1 : 1;
+            const directions = [];
+            if (!isKing) {
+                directions.push([forwardDir, -1], [forwardDir, 1]);
+            } else {
+                directions.push([-1, -1], [-1, 1], [1, -1], [1, 1]);
+            }
+            for (let [dr, dc] of directions) {
+                const midRow = row + dr;
+                const midCol = col + dc;
+                const landRow = row + dr * 2;
+                const landCol = col + dc * 2;
+                if (landRow >= 0 && landRow < 8 && landCol >= 0 && landCol < 8) {
+                    const midPiece = boardState[midRow]?.[midCol];
+                    const landPiece = boardState[landRow]?.[landCol];
+                    if (midPiece && midPiece.toLowerCase() !== color && !landPiece) {
+                        jumps.push({ toRow: landRow, toCol: landCol, isJump: true, jumpedRow: midRow, jumpedCol: midCol });
+                    }
+                }
+            }
+            return jumps;
+        }
+        
+        function getSimpleMoves(row, col, piece, boardState) {
+            const moves = [];
+            const isKing = piece === 'R' || piece === 'B';
+            const color = piece.toLowerCase();
+            const forwardDir = color === 'r' ? -1 : 1;
+            if (!isKing) {
+                for (let dc of [-1, 1]) {
+                    const newRow = row + forwardDir;
+                    const newCol = col + dc;
+                    if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8 && !boardState[newRow][newCol] && isDarkSquare(newRow, newCol)) {
+                        moves.push({ toRow: newRow, toCol: newCol, isJump: false });
+                    }
+                }
+            } else {
+                const dirs = [[-1,-1], [-1,1], [1,-1], [1,1]];
+                for (let [dr, dc] of dirs) {
+                    let newRow = row + dr;
+                    let newCol = col + dc;
+                    while (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                        if (boardState[newRow][newCol]) break;
+                        if (isDarkSquare(newRow, newCol)) {
+                            moves.push({ toRow: newRow, toCol: newCol, isJump: false });
+                        }
+                        newRow += dr;
+                        newCol += dc;
+                    }
+                }
+            }
+            return moves;
+        }
+        
+        function hasAnyJump(color, boardState) {
+            const pieceChar = color === 'red' ? 'r' : 'b';
+            const kingChar = color === 'red' ? 'R' : 'B';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = boardState[r][c];
+                    if (p === pieceChar || p === kingChar) {
+                        if (getJumpsForPiece(r, c, p, boardState).length > 0) return true;
+                    }
+                }
+            }
+            return false;
+        }
+        
+        function getValidMovesForPiece(row, col, piece, boardState, turnColor) {
+            const jumps = getJumpsForPiece(row, col, piece, boardState);
+            if (jumps.length > 0) return jumps;
+            return getSimpleMoves(row, col, piece, boardState);
+        }
+        
+        function hasAnyLegalMove(color, boardState) {
+            const pieceChar = color === 'red' ? 'r' : 'b';
+            const kingChar = color === 'red' ? 'R' : 'B';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = boardState[r][c];
+                    if (p === pieceChar || p === kingChar) {
+                        if (getValidMovesForPiece(r, c, p, boardState, color).length > 0) return true;
+                    }
+                }
+            }
+            return false;
+        }
+        
+        function executeMove(fromRow, fromCol, toRow, toCol, isJump, jumpedRow, jumpedCol, boardState) {
+            const piece = boardState[fromRow][fromCol];
+            if (!piece) return false;
+            boardState[toRow][toCol] = piece;
+            boardState[fromRow][fromCol] = null;
+            if (isJump && jumpedRow !== undefined) {
+                boardState[jumpedRow][jumpedCol] = null;
+            }
+            // promotion
+            if (piece === 'r' && toRow === 0) boardState[toRow][toCol] = 'R';
+            if (piece === 'b' && toRow === 7) boardState[toRow][toCol] = 'B';
+            return true;
+        }
+        
+        // Check if piece has additional jump after move
+        function hasAdditionalJump(row, col, boardState) {
+            const piece = boardState[row][col];
+            if (!piece) return false;
+            return getJumpsForPiece(row, col, piece, boardState).length > 0;
+        }
+        
+        // Main move handler (returns true if move executed, also handles multi-jump)
+        function tryMove(fromRow, fromCol, toRow, toCol, skipTurnSwitch = false) {
+            if (!gameActive) return false;
+            const piece = board[fromRow][fromCol];
+            if (!piece) return false;
+            const pieceColor = (piece === 'r' || piece === 'R') ? 'red' : 'black';
+            if (pieceColor !== currentTurn) return false;
+            
+            let legalMoves = getValidMovesForPiece(fromRow, fromCol, piece, board, currentTurn);
+            const targetMove = legalMoves.find(m => m.toRow === toRow && m.toCol === toCol);
+            if (!targetMove) return false;
+            
+            if (hasAnyJump(currentTurn, board) && !targetMove.isJump) return false;
+            
+            const isJump = targetMove.isJump;
+            executeMove(fromRow, fromCol, toRow, toCol, isJump, targetMove.jumpedRow, targetMove.jumpedCol, board);
+            
+            const newPiece = board[toRow][toCol];
+            const moreJumps = isJump && hasAdditionalJump(toRow, toCol, board);
+            
+            if (moreJumps) {
+                selectedRow = toRow;
+                selectedCol = toCol;
+                validMoves = getJumpsForPiece(toRow, toCol, newPiece, board);
+                gameStatusSpan.innerHTML = `${currentTurn.toUpperCase()} must continue jumping!`;
+                drawBoard();
+                return true;
+            }
+            
+            if (!skipTurnSwitch) {
+                currentTurn = currentTurn === 'red' ? 'black' : 'red';
+            }
+            
+            // Check game over after turn switch
+            if (!hasAnyLegalMove(currentTurn, board)) {
+                gameActive = false;
+                const winner = currentTurn === 'red' ? 'BLACK' : 'RED';
+                gameStatusSpan.innerHTML = `🏆 GAME OVER! ${winner} WINS! 🏆`;
+                turnPieceSpan.innerHTML = winner === 'RED' ? '🔴 RED WINS' : '⚫ BLACK WINS';
+            }
+            
+            selectedRow = null;
+            selectedCol = null;
+            validMoves = [];
+            updateTurnDisplay();
+            drawBoard();
+            return true;
+        }
+        
+        // ---------- AI DECISION (Difficulty-based) ----------
+        function getAllPossibleMoves(color, boardState) {
+            const moves = [];
+            const pieceChar = color === 'red' ? 'r' : 'b';
+            const kingChar = color === 'red' ? 'R' : 'B';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const p = boardState[r][c];
+                    if (p === pieceChar || p === kingChar) {
+                        const movesForPiece = getValidMovesForPiece(r, c, p, boardState, color);
+                        for (let move of movesForPiece) {
+                            moves.push({ fromRow: r, fromCol: c, ...move });
+                        }
+                    }
+                }
+            }
+            return moves;
+        }
+        
+        // Score a move (higher = better for AI, AI plays as BLACK)
+        function evaluateMove(move, boardState) {
+            let score = 0;
+            // prioritize jumps
+            if (move.isJump) score += 30;
+            // promote to king (moving to last row for black = row 7)
+            if (boardState[move.fromRow][move.fromCol] === 'b' && move.toRow === 7) score += 25;
+            // prefer moving towards center
+            const centerDist = Math.abs(move.toCol - 3.5);
+            score += (4 - centerDist) * 2;
+            // random factor for difficulty
+            return score;
+        }
+        
+        function getAIMove() {
+            const moves = getAllPossibleMoves('black', board);
+            if (moves.length === 0) return null;
+            
+            if (aiDifficulty === 'easy') {
+                // random move (but prefer jumps a little)
+                const jumps = moves.filter(m => m.isJump);
+                if (jumps.length > 0 && Math.random() > 0.3) {
+                    return jumps[Math.floor(Math.random() * jumps.length)];
+                }
+                return moves[Math.floor(Math.random() * moves.length)];
+            } 
+            else if (aiDifficulty === 'medium') {
+                // weighted random based on score
+                const scored = moves.map(m => ({ move: m, score: evaluateMove(m, board) }));
+                const totalScore = scored.reduce((sum, s) => sum + s.score + 5, 0);
+                let rand = Math.random() * totalScore;
+                for (let s of scored) {
+                    rand -= (s.score + 5);
+                    if (rand <= 0) return s.move;
+                }
+                return moves[0];
+            } 
+            else { // hard: best move by score
+                let bestMove = moves[0];
+                let bestScore = -Infinity;
+                for (let move of moves) {
+                    let score = evaluateMove(move, board);
+                    if (move.isJump) score += 20;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = move;
+                    }
+                }
+                return bestMove;
+            }
+        }
+        
+        async function aiMove() {
+            if (aiThinking) return;
+            if (!gameActive) return;
+            if (gameMode !== 'vsAI') return;
+            if (currentTurn !== 'black') return;
+            
+            aiThinking = true;
+            gameStatusSpan.innerHTML = "🤖 AI is thinking...";
+            drawBoard();
+            
+            // slight delay for natural feel
+            await new Promise(resolve => setTimeout(resolve, 150 + Math.random() * 150));
+            
+            const move = getAIMove();
+            if (move) {
+                tryMove(move.fromRow, move.fromCol, move.toRow, move.toCol, false);
+            } else {
+                // AI has no moves -> game over
+                if (!hasAnyLegalMove('black', board)) {
+                    gameActive = false;
+                    gameStatusSpan.innerHTML = "🏆 RED WINS! AI has no moves 🏆";
+                    turnPieceSpan.innerHTML = "🔴 RED WINS";
+                }
+            }
+            aiThinking = false;
+            updateTurnDisplay();
+            drawBoard();
+        }
+        
+        // ---------- UI UPDATES ----------
+        function updateTurnDisplay() {
+            if (!gameActive) return;
+            turnPieceSpan.innerHTML = currentTurn === 'red' ? '🔴 RED' : '⚫ BLACK';
+            const hasJump = hasAnyJump(currentTurn, board);
+            if (hasJump) {
+                gameStatusSpan.innerHTML = `${currentTurn.toUpperCase()} must jump!`;
+            } else {
+                gameStatusSpan.innerHTML = `${currentTurn.toUpperCase()} to move`;
+            }
+            // trigger AI if needed
+            if (gameMode === 'vsAI' && currentTurn === 'black' && gameActive && !aiThinking) {
+                aiMove();
+            }
+        }
+        
+        // ---------- DRAWING ----------
+        function drawBoard() {
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const x = col * CELL_SIZE;
+                    const y = row * CELL_SIZE;
+                    const isDark = (row + col) % 2 === 1;
+                    ctx.fillStyle = isDark ? '#7a5a3a' : '#e8d8b0';
+                    ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                    
+                    if (selectedRow === row && selectedCol === col) {
+                        ctx.fillStyle = 'rgba(80, 200, 80, 0.6)';
+                        ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                    }
+                    for (let mv of validMoves) {
+                        if (mv.toRow === row && mv.toCol === col) {
+                            ctx.fillStyle = 'rgba(100, 255, 100, 0.5)';
+                            ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                            ctx.beginPath();
+                            ctx.arc(x + CELL_SIZE/2, y + CELL_SIZE/2, CELL_SIZE * 0.2, 0, Math.PI*2);
+                            ctx.fillStyle = '#ffff88';
+                            ctx.fill();
+                        }
+                    }
+                    
+                    const piece = board[row][col];
+                    if (piece) {
+                        const isRed = piece === 'r' || piece === 'R';
+                        const isKing = piece === 'R' || piece === 'B';
+                        const gradient = ctx.createRadialGradient(x + 15, y + 15, 5, x + 30, y + 30, 25);
+                        if (isRed) {
+                            gradient.addColorStop(0, '#ff6666');
+                            gradient.addColorStop(1, '#aa2222');
+                        } else {
+                            gradient.addColorStop(0, '#555555');
+                            gradient.addColorStop(1, '#1a1a1a');
+                        }
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(x + CELL_SIZE/2, y + CELL_SIZE/2, CELL_SIZE * 0.38, 0, Math.PI*2);
+                        ctx.fill();
+                        ctx.fillStyle = isRed ? '#fff0c0' : '#dddddd';
+                        ctx.font = `bold ${CELL_SIZE * 0.42}px monospace`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(isKing ? '👑' : '●', x + CELL_SIZE/2, y + CELL_SIZE/2);
+                    }
+                }
+            }
+            ctx.strokeStyle = '#b88c4a';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, SIZE, SIZE);
+        }
+        
+        // ---------- EVENT HANDLERS ----------
+        function getBoardCoordFromClick(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            let canvasX = (clientX - rect.left) * scaleX;
+            let canvasY = (clientY - rect.top) * scaleY;
+            if (canvasX < 0 || canvasY < 0) return null;
+            let col = Math.floor(canvasX / CELL_SIZE);
+            let row = Math.floor(canvasY / CELL_SIZE);
+            if (row >= 0 && row < 8 && col >= 0 && col < 8) return { row, col };
+            return null;
+        }
+        
+        function handleCanvasClick(e) {
+            if (!gameActive) return;
+            if (gameMode === 'vsAI' && currentTurn === 'black') return;
+            if (aiThinking) return;
+            
+            const coord = getBoardCoordFromClick(e.clientX, e.clientY);
+            if (!coord) return;
+            const { row, col } = coord;
+            
+            if (selectedRow === null) {
+                const piece = board[row][col];
+                if (piece) {
+                    const pieceColor = (piece === 'r' || piece === 'R') ? 'red' : 'black';
+                    if (pieceColor === currentTurn) {
+                        selectedRow = row;
+                        selectedCol = col;
+                        validMoves = getValidMovesForPiece(row, col, piece, board, currentTurn);
+                        if (validMoves.length === 0) {
+                            selectedRow = null;
+                            gameStatusSpan.innerHTML = `No moves for this piece`;
+                        }
+                        drawBoard();
+                    }
+                }
+                return;
+            }
+            
+            const success = tryMove(selectedRow, selectedCol, row, col, false);
+            if (!success) {
+                selectedRow = null;
+                validMoves = [];
+                gameStatusSpan.innerHTML = `Invalid move`;
+                drawBoard();
+            }
+        }
+        
+        function resetGame() {
+            initBoard();
+            currentTurn = 'red';
+            gameActive = true;
+            selectedRow = null;
+            selectedCol = null;
+            validMoves = [];
+            aiThinking = false;
+            updateTurnDisplay();
+            drawBoard();
+        }
+        
+        function setMode(mode) {
+            gameMode = mode;
+            resetGame();
+            if (mode === 'pvp') {
+                pvpBtn.classList.add('active-mode');
+                vsAIBtn.classList.remove('active-mode');
+                gameStatusSpan.innerHTML = "PvP mode - Red moves first";
+            } else {
+                vsAIBtn.classList.add('active-mode');
+                pvpBtn.classList.remove('active-mode');
+                gameStatusSpan.innerHTML = "Vs AI mode - You are RED, AI is BLACK";
+                if (currentTurn === 'black' && gameActive) aiMove();
+            }
+        }
+        
+        function setDifficulty(diff) {
+            aiDifficulty = diff;
+            easyBtn.classList.remove('active-mode');
+            mediumBtn.classList.remove('active-mode');
+            hardBtn.classList.remove('active-mode');
+            if (diff === 'easy') easyBtn.classList.add('active-mode');
+            else if (diff === 'medium') mediumBtn.classList.add('active-mode');
+            else hardBtn.classList.add('active-mode');
+            if (gameMode === 'vsAI') resetGame();
+        }
+        
+        canvas.addEventListener('click', handleCanvasClick);
+        pvpBtn.addEventListener('click', () => setMode('pvp'));
+        vsAIBtn.addEventListener('click', () => setMode('vsAI'));
+        easyBtn.addEventListener('click', () => setDifficulty('easy'));
+        mediumBtn.addEventListener('click', () => setDifficulty('medium'));
+        hardBtn.addEventListener('click', () => setDifficulty('hard'));
+        resetBtn.addEventListener('click', resetGame);
+        window.addEventListener('keydown', (e) => { if (e.key === 'r' || e.key === 'R') { e.preventDefault(); resetGame(); } });
+        
+        initBoard();
+        resetGame();
+        drawBoard();
+    })();
+</script>
+</body>
+</html>
